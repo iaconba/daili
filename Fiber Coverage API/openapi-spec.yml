@@ -1,0 +1,213 @@
+openapi: 3.0.0
+
+info:
+  title: Fiber Coverage API
+  version: 1.0.0
+  description: API for B2B partners to check Fiber (FTTH) coverage for a given address.
+
+servers:
+  - url: https://api.yourcompany.com/v1
+    description: Production API
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+
+  /fiber-coverage:
+    post:
+      summary: Request Fiber Coverage Check for an Address
+      description: Initiates an asynchronous check for fiber coverage at a specified address. Returns a request ID for polling the result.
+      operationId: requestFiberCoverage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - addressLine1
+                - zipCode
+                - city
+                - country
+              properties:
+                addressLine1:
+                  type: string
+                  description: The primary address line (e.g., street name and number).
+                  example: "Via Roma 10"
+                addressLine2:
+                  type: string
+                  nullable: true
+                  description: Optional secondary address line (e.g., building, apartment number).
+                  example: "Scala B, Int. 3"
+                zipCode:
+                  type: string
+                  description: Postal code.
+                  example: "00100"
+                city:
+                  type: string
+                  description: City name.
+                  example: "Roma"
+                province:
+                  type: string
+                  nullable: true
+                  description: Province/State name (optional).
+                  example: "RM"
+                country:
+                  type: string
+                  description: Country code (ISO 3166-1 alpha-2).
+                  example: "IT"
+                callbackUrl:
+                  type: string
+                  format: url
+                  nullable: true
+                  description: Optional URL for webhook notification upon completion.
+                  example: "https://partner.com/api/fiber-coverage-webhook"
+      responses:
+        '202':
+          description: Request accepted for asynchronous processing.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL to poll for the result of this request.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestId:
+                    type: string
+                    description: Unique identifier for the asynchronous request.
+                    example: "req-1234567890abcdef"
+                  status:
+                    type: string
+                    description: Current status of the request.
+                    enum: [ACCEPTED, PENDING]
+                    example: "ACCEPTED"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '449':
+          $ref: '#/components/responses/RetryWith'
+
+  /fiber-coverage/{requestId}:
+    get:
+      summary: Get Fiber Coverage Result by Request ID
+      description: Retrieves the result of a previously submitted fiber coverage check.
+      operationId: getFiberCoverageResult
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema:
+            type: string
+          description: The unique identifier for the request.
+      responses:
+        '200':
+          description: Fiber coverage result available.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestId:
+                    type: string
+                    example: "req-1234567890abcdef"
+                  status:
+                    type: string
+                    enum: [COMPLETED, COVERED, NOT_COVERED, ERROR]
+                    example: "COVERED"
+                  coverageDetails:
+                    type: object
+                    nullable: true
+                    properties:
+                      isCovered:
+                        type: boolean
+                        example: true
+                      availableTechnologies:
+                        type: array
+                        items:
+                          type: string
+                          enum: [FTTH_GPON, FTTH_XGS_PON]
+                        example: ["FTTH_GPON"]
+                      operatorAvailability:
+                        type: object
+                        additionalProperties:
+                          type: boolean
+                        example:
+                          Telecom: true
+                          Vodafone: false
+                          WindTre: true
+                    description: Details about the fiber coverage, present if status is COVERED/NOT_COVERED.
+                  errorMessage:
+                    type: string
+                    nullable: true
+                    description: Error message if the request failed.
+        '202':
+          description: Request still pending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestId:
+                    type: string
+                    example: "req-1234567890abcdef"
+                  status:
+                    type: string
+                    enum: [PENDING]
+                    example: "PENDING"
+        '404':
+          description: Request ID not found.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+
+  responses:
+    BadRequest:
+      description: Invalid input parameters.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Invalid address format"
+    Unauthorized:
+      description: Authentication required or invalid API Key.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Unauthorized"
+    RetryWith:
+      description: Too many requests. Retry after some time.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            format: int32
+          description: Seconds to wait before retrying.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Too many requests, please try again later."
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
